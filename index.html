@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Terrance Credit Card Float App</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; background:#f5f5f5; }
+    header { background:#1b4b82; color:#fff; padding:12px 16px; }
+    header h1 { margin:0; font-size:18px; }
+    header small { display:block; font-size:11px; opacity:0.85; }
+    main { padding:10px 12px 40px; }
+    .tabs { display:flex; gap:6px; margin:10px 0; flex-wrap:wrap; }
+    .tab-btn { border:1px solid #ccc; background:#e4e4e4; padding:6px 10px; border-radius:4px; font-size:13px; cursor:pointer; }
+    .tab-btn.active { background:#1b4b82; color:#fff; border-color:#1b4b82; }
+    .card { background:#fff; border-radius:6px; padding:10px; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,0.08); }
+    h2 { font-size:16px; margin:0 0 8px; }
+    h3 { font-size:14px; margin:6px 0; }
+    label { font-size:12px; display:block; margin-top:4px; }
+    input, select { font-size:12px; padding:4px; margin-top:2px; width:100%; box-sizing:border-box; }
+    table { width:100%; border-collapse:collapse; font-size:12px; margin-top:6px; }
+    th, td { border:1px solid #ccc; padding:4px 6px; text-align:left; }
+    th { background:#e9eef7; }
+    .small { font-size:11px; color:#555; }
+    .pill { display:inline-block; padding:1px 6px; border-radius:10px; font-size:11px; }
+    .pill-safe { background:#e3f5e9; color:#1b5e20; }
+    .pill-warn { background:#fff8e1; color:#8c6d1f; }
+    .pill-caution { background:#ffebee; color:#b71c1c; }
+    .pill-danger { background:#ff5252; color:#fff; }
+    .badge { display:inline-block; padding:0 4px; font-size:10px; border-radius:3px; }
+    .badge-high { background:#ffebee; color:#b71c1c; }
+    .badge-med { background:#fff8e1; color:#8c6d1f; }
+    .badge-low { background:#e8f5e9; color:#1b5e20; }
+    .flex { display:flex; gap:6px; flex-wrap:wrap; }
+    .flex-2 { flex:1 1 180px; }
+    .btn { margin-top:6px; padding:6px 10px; font-size:12px; border-radius:4px; border:1px solid #1b4b82; background:#1b4b82; color:#fff; cursor:pointer; }
+    .btn.secondary { background:#fff; color:#1b4b82; }
+    .mt-4 { margin-top:4px; }
+    .mt-8 { margin-top:8px; }
+    .mt-12 { margin-top:12px; }
+    .summary-box { font-size:12px; background:#fff3e0; padding:6px; border-radius:4px; border:1px solid #ffe0b2; }
+    @media (min-width:800px){
+      main { max-width:980px; margin:0 auto; }
+    }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Terrance Credit Card Float App</h1>
+  <small>Cards, bills, utilization alerts & monthly “which card pays which bill” planner.</small>
+</header>
+
+<main>
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="cards">Cards</button>
+    <button class="tab-btn" data-tab="bills">Bills</button>
+    <button class="tab-btn" data-tab="util">Utilization</button>
+    <button class="tab-btn" data-tab="plan">Monthly Plan</button>
+    <button class="tab-btn" data-tab="summary">Per-Card Payments</button>
+  </div>
+
+  <!-- CARDS TAB -->
+  <section id="tab-cards" class="card">
+    <h2>Cards</h2>
+    <p class="small">Enter up to 15 cards (limit, balance, days). These mirror your “Credit Cards” sheet.</p>
+
+    <div id="cards-container"></div>
+    <button class="btn mt-8" id="add-card-btn">+ Add Card</button>
+  </section>
+
+  <!-- BILLS TAB -->
+  <section id="tab-bills" class="card" style="display:none;">
+    <h2>Bills</h2>
+    <p class="small">Enter monthly bills and assign to a card. These mirror your “Bill Master List”.</p>
+
+    <div id="bills-container"></div>
+    <button class="btn mt-8" id="add-bill-btn">+ Add Bill</button>
+  </section>
+
+  <!-- UTILIZATION TAB -->
+  <section id="tab-util" class="card" style="display:none;">
+    <h2>Utilization Alerts</h2>
+    <p class="small">Shows utilization %, zone (Safe/Warning/Caution/Danger), and room to 30% / 10%.</p>
+    <div id="utilization-table"></div>
+  </section>
+
+  <!-- MONTHLY PLAN TAB -->
+  <section id="tab-plan" class="card" style="display:none;">
+    <h2>Monthly Plan – Which Card Pays Which Bill</h2>
+    <p class="small">Sorted by bill due day. This is your “which card pays what” view.</p>
+    <div id="plan-table"></div>
+  </section>
+
+  <!-- PER-CARD SUMMARY TAB -->
+  <section id="tab-summary" class="card" style="display:none;">
+    <h2>Per-Card Payment Summary</h2>
+    <p class="small">For each card: bills assigned, utilization after charges, “Pay THIS” amount to target 10% utilization.</p>
+    <div id="summary-table"></div>
+  </section>
+
+</main>
+
+<script>
+  const STORAGE_KEY = "terrance-credit-float-data";
+
+  function saveState() {
+    const state = { cards, bills };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  function loadState() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const state = JSON.parse(raw);
+      if (state.cards) cards = state.cards;
+      if (state.bills) bills = state.bills;
+    } catch(e) {
+      console.error("Failed to load state", e);
+    }
+  }
+
+  // ---------- Data Structures ----------
+  let cards = [
+    { id: "Card1", bank: "Navy Federal Card", limit: 1500, balance: 1500.10, statementDay: 15, dueDay: 10, reportDay: 17, active: true },
+    { id: "Card2", bank: "Indigo 3069", limit: 500, balance: 632.81, statementDay: 20, dueDay: 15, reportDay: 22, active: true },
+    { id: "Card3", bank: "Indigo 1448", limit: 1000, balance: 599.40, statementDay: 25, dueDay: 20, reportDay: 27, active: true },
+    { id: "Card4", bank: "Milestone 5093", limit: 500, balance: 489.81, statementDay: 10, dueDay: 5, reportDay: 12, active: true },
+    { id: "Card5", bank: "Destiny 3992", limit: 1000, balance: 944.27, statementDay: 5, dueDay: 1, reportDay: 7, active: true },
+  ];
+
+  let bills = [
+    { name: "Storage 1", amount: 570.60, dueDay: 1, cardId: "Card1", category: "Housing", active: true },
+    { name: "Storage 2", amount: 109, dueDay: 12, cardId: "Card1", category: "Housing", active: true },
+    { name: "Storage 3", amount: 180, dueDay: 15, cardId: "Card2", category: "Housing", active: true },
+    { name: "Storage 4", amount: 98, dueDay: 10, cardId: "Card2", category: "Housing", active: true },
+    { name: "Intuit", amount: 75, dueDay: 20, cardId: "Card2", category: "Utilities", active: true },
+    { name: "Cell Phone", amount: 80, dueDay: 5, cardId: "Card3", category: "Phone", active: true },
+    { name: "Car Payment", amount: 785, dueDay: 3, cardId: "Card3", category: "Auto", active: true },
+    { name: "Car Insurance", amount: 0, dueDay: 10, cardId: "Card1", category: "Auto", active: true },
+    { name: "Gas/Fuel", amount: 200, dueDay: 15, cardId: "Card4", category: "Auto", active: true },
+    { name: "Groceries", amount: 400, dueDay: 1, cardId: "Card3", category: "Health", active: true },
+    { name: "Klarna", amount: 45, dueDay: 15, cardId: "Card2", category: "Entertainment", active: true },
+    { name: "Affirm", amount: 30, dueDay: 20, cardId: "Card5", category: "Food", active: true },
+    { name: "NTTA", amount: 600, dueDay: 15, cardId: "Card5", category: "Auto", active: true },
+  ];
+
+  loadState();
+
+  function fmtMoney(x) {
+    if (x === null || x === undefined || isNaN(x)) return "";
+    return "$" + x.toFixed(2);
+  }
+
+  function utilizationStatus(util) {
+    if (util === 0) return { label: "Inactive", class: "" };
+    if (util < 0.10) return { label: "✓ SAFE", class: "pill-safe" };
+    if (util < 0.30) return { label: "⚠ Warning", class: "pill-warn" };
+    if (util < 0.50) return { label: "🔶 CAUTION", class: "pill-caution" };
+    return { label: "🚨 DANGER", class: "pill-danger" };
+  }
+
+  // Tabs
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      const tab = btn.dataset.tab;
+      ["cards","bills","util","plan","summary"].forEach(id => {
+        document.getElementById("tab-" + id).style.display = (id === tab ? "block" : "none");
+      });
+      renderAll();
+    });
+  });
+
+  // Cards UI
+  function renderCards() {
+    const container = document.getElementById("cards-container");
+    container.innerHTML = "";
+
+    cards.forEach((card, i) => {
+      const div = document.createElement("div");
+      div.className = "card";
+      div.style.marginBottom = "8px";
+      div.style.border = "1px solid #ddd";
+
+      const util = card.limit > 0 ? card.balance / card.limit : 0;
+      const status = utilizationStatus(util);
+
+      div.innerHTML = `
+        <div class="flex">
+          <div class="flex-2">
+            <label>Card ID</label>
+            <input value="${card.id}" data-idx="${i}" data-field="id" />
+          </div>
+          <div class="flex-2">
+            <label>Bank</label>
+            <input value="${card.bank}" data-idx="${i}" data-field="bank" />
+          </div>
+        </div>
+        <div class="flex">
+          <div class="flex-2">
+            <label>Credit Limit</label>
+            <input type="number" step="0.01" value="${card.limit}" data-idx="${i}" data-field="limit" />
+          </div>
+          <div class="flex-2">
+            <label>Current Balance</label>
+            <input type="number" step="0.01" value="${card.balance}" data-idx="${i}" data-field="balance" />
+          </div>
+        </div>
+        <div class="flex">
+          <div class="flex-2">
+            <label>Statement Day</label>
+            <input type="number" value="${card.statementDay}" data-idx="${i}" data-field="statementDay" />
+          </div>
+          <div class="flex-2">
+            <label>Due Day</label>
+            <input type="number" value="${card.dueDay}" data-idx="${i}" data-field="dueDay" />
+          </div>
+          <div class="flex-2">
+            <label>Credit Report Day</label>
+            <input type="number" value="${card.reportDay}" data-idx="${i}" data-field="reportDay" />
+          </div>
+        </div>
+        <div class="mt-4 small">
+          Utilization: ${(util*100).toFixed(1)}%
+          <span class="pill ${status.class}">${status.label}</span>
+          &nbsp;|&nbsp; Active:
+          <input type="checkbox" ${card.active ? "checked" : ""} data-idx="${i}" data-field="active" />
+        </div>
+        <div class="mt-4 small">
+          <button class="btn secondary" data-remove-card="${i}">Remove Card</button>
+        </div>
+      `;
+      container.appendChild(div);
+    });
+
+    container.querySelectorAll("input").forEach(inp => {
+      inp.addEventListener("input", e => {
+        const idx = parseInt(e.target.dataset.idx, 10);
+        const field = e.target.dataset.field;
+        let val = e.target.value;
+        if (["limit","balance","statementDay","dueDay","reportDay"].includes(field)) {
+          val = val === "" ? 0 : parseFloat(val);
+        }
+        if (field === "active") {
+          cards[idx][field] = e.target.checked;
+        } else {
+          cards[idx][field] = val;
+        }
+        saveState();
+        renderAll();
+      });
+    });
+
+    container.querySelectorAll("button[data-remove-card]").forEach(btn => {
+      btn.addEventListener("click", e => {
+        const idx = parseInt(e.target.getAttribute("data-remove-card"), 10);
+        cards.splice(idx, 1);
+        saveState();
+        renderAll();
+      });
+    });
+  }
+
+  document.getElementById("add-card-btn").addEventListener("click", () => {
+    cards.push({
+      id: "Card" + (cards.length + 1),
+      bank: "",
+      limit: 0,
+      balance: 0,
+      statementDay: 1,
+      dueDay: 1,
+      reportDay: 1,
+      active: true
+    });
+    saveState();
+    renderAll();
+  });
+
+  // Bills UI
+  function renderBills() {
+    const container = document.getElementById("bills-container");
+    container.innerHTML = "";
+
+    bills.forEach((bill, i) => {
+      const div = document.createElement("div");
+      div.className = "card";
+      div.style.marginBottom = "8px";
+      div.style.border = "1px solid #ddd";
+
+      const cardOptions = cards.map(c => 
+        `<option value="${c.id}" ${bill.cardId === c.id ? "selected" : ""}>${c.id} – ${c.bank}</option>`
+      ).join("");
+
+      div.innerHTML = `
+        <div class="flex">
+          <div class="flex-2">
+            <label>Bill Name</label>
+            <input value="${bill.name}" data-idx="${i}" data-field="name" />
+          </div>
+          <div class="flex-2">
+            <label>Amount</label>
+            <input type="number" step="0.01" value="${bill.amount}" data-idx="${i}" data-field="amount" />
+          </div>
+        </div>
+        <div class="flex">
+          <div class="flex-2">
+            <label>Due Day</label>
+            <input type="number" value="${bill.dueDay}" data-idx="${i}" data-field="dueDay" />
+          </div>
+          <div class="flex-2">
+            <label>Pay Via (Card)</label>
+            <select data-idx="${i}" data-field="cardId">
+              <option value="">— Select —</option>
+              ${cardOptions}
+            </select>
+          </div>
+          <div class="flex-2">
+            <label>Category</label>
+            <input value="${bill.category}" data-idx="${i}" data-field="category" />
+          </div>
+        </div>
+        <div class="mt-4 small">
+          Active:
+          <input type="checkbox" ${bill.active ? "checked" : ""} data-idx="${i}" data-field="active" />
+          &nbsp;|&nbsp;
+          <button class="btn secondary" data-remove-bill="${i}">Remove Bill</button>
+        </div>
+      `;
+      container.appendChild(div);
+    });
+
+    container.querySelectorAll("input, select").forEach(inp => {
+      inp.addEventListener("input", e => {
+        const idx = parseInt(e.target.dataset.idx, 10);
+        const field = e.target.dataset.field;
+        let val = e.target.value;
+        if (["amount","dueDay"].includes(field)) {
+          val = val === "" ? 0 : parseFloat(val);
+        }
+        if (field === "active") {
+          bills[idx][field] = e.target.checked;
+        } else {
+          bills[idx][field] = val;
+        }
+        saveState();
+        renderAll();
+      });
+    });
+
+    container.querySelectorAll("button[data-remove-bill]").forEach(btn => {
+      btn.addEventListener("click", e => {
+        const idx = parseInt(e.target.getAttribute("data-remove-bill"), 10);
+        bills.splice(idx, 1);
+        saveState();
+        renderAll();
+      });
+    });
+  }
+
+  document.getElementById("add-bill-btn").addEventListener("click", () => {
+    bills.push({
+      name: "",
+      amount: 0,
+      dueDay: 1,
+      cardId: "",
+      category: "",
+      active: true
+    });
+    saveState();
+    renderAll();
+  });
+
+  // Utilization
+  function renderUtilization() {
+    const div = document.getElementById("utilization-table");
+    const activeCards = cards.filter(c => c.active && c.limit > 0);
+
+    if (activeCards.length === 0) {
+      div.innerHTML = "<p class='small'>No active cards yet.</p>";
+      return;
+    }
+
+    let rows = "";
+    let totalLimit = 0, totalBal = 0;
+
+    activeCards.forEach(c => {
+      const util = c.limit > 0 ? c.balance / c.limit : 0;
+      const status = utilizationStatus(util);
+      const room30 = Math.max(c.limit * 0.30 - c.balance, 0);
+      const room10 = Math.max(c.limit * 0.10 - c.balance, 0);
+      totalLimit += c.limit;
+      totalBal += c.balance;
+
+      rows += `
+        <tr>
+          <td>${c.id}</td>
+          <td>${c.bank}</td>
+          <td>${fmtMoney(c.balance)}</td>
+          <td>${fmtMoney(c.limit)}</td>
+          <td>${fmtMoney(c.limit - c.balance)}</td>
+          <td>${(util*100).toFixed(1)}%</td>
+          <td><span class="pill ${status.class}">${status.label}</span></td>
+          <td>${fmtMoney(room30)}</td>
+          <td>${fmtMoney(room10)}</td>
+        </tr>
+      `;
+    });
+
+    const overallUtil = totalLimit > 0 ? (totalBal / totalLimit) : 0;
+
+    div.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>Card</th>
+            <th>Bank</th>
+            <th>Balance</th>
+            <th>Limit</th>
+            <th>Available</th>
+            <th>Util %</th>
+            <th>Status</th>
+            <th>Room to 30%</th>
+            <th>Room to 10%</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="summary-box mt-8">
+        Total Limit: <strong>${fmtMoney(totalLimit)}</strong> |
+        Total Balance: <strong>${fmtMoney(totalBal)}</strong> |
+        Overall Utilization: <strong>${(overallUtil*100).toFixed(1)}%</strong>
+      </div>
+    `;
+  }
+
+  // Plan
+  function renderPlan() {
+    const div = document.getElementById("plan-table");
+    const activeBills = bills.filter(b => b.active && b.amount > 0);
+    if (activeBills.length === 0) {
+      div.innerHTML = "<p class='small'>No active bills with amount > 0.</p>";
+      return;
+    }
+
+    activeBills.sort((a,b) => a.dueDay - b.dueDay);
+
+    let rows = "";
+    activeBills.forEach((b, i) => {
+      const card = cards.find(c => c.id === b.cardId) || {};
+      let priority = "🟢 LOW", badgeClass = "badge-low";
+      if (b.name.toLowerCase().includes("car payment") || b.name.toLowerCase().includes("storage")) {
+        priority = "🔴 HIGH"; badgeClass = "badge-high";
+      } else if (b.name.toLowerCase().includes("cell") || b.name.toLowerCase().includes("klarna") || b.name.toLowerCase().includes("ntta")) {
+        priority = "🟡 MEDIUM"; badgeClass = "badge-med";
+      }
+
+      rows += `
+        <tr>
+          <td>${i+1}</td>
+          <td>${b.name}</td>
+          <td>${fmtMoney(b.amount)}</td>
+          <td>Day ${b.dueDay}</td>
+          <td>${b.cardId || "—"}</td>
+          <td>${card.bank || ""}</td>
+          <td><span class="badge ${badgeClass}">${priority}</span></td>
+        </tr>
+      `;
+    });
+
+    div.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Bill</th>
+            <th>Amount</th>
+            <th>Due Day</th>
+            <th>Card</th>
+            <th>Bank</th>
+            <th>Priority</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  }
+
+  // Summary
+  function renderSummary() {
+    const div = document.getElementById("summary-table");
+    const activeCards = cards.filter(c => c.active && c.limit > 0);
+
+    if (activeCards.length === 0) {
+      div.innerHTML = "<p class='small'>No active cards.</p>";
+      return;
+    }
+
+    const cardBills = {};
+    activeCards.forEach(c => cardBills[c.id] = []);
+    bills.filter(b => b.active && b.amount > 0).forEach(b => {
+      if (!cardBills[b.cardId]) cardBills[b.cardId] = [];
+      cardBills[b.cardId].push(b);
+    });
+
+    let rows = "";
+    let grandTotal = 0;
+
+    activeCards.forEach(c => {
+      const cb = cardBills[c.id] || [];
+      const totalCharges = cb.reduce((sum, b) => sum + b.amount, 0);
+      const balanceAfter = c.balance + totalCharges;
+      const limit = c.limit;
+      const utilAfter = limit > 0 ? balanceAfter / limit : 0;
+      const target10 = limit * 0.10;
+      const payAmount = Math.max(balanceAfter - target10, totalCharges);
+      const targetBalance = balanceAfter - payAmount;
+      const targetUtil = limit > 0 ? targetBalance / limit : 0;
+      grandTotal += payAmount;
+
+      rows += `
+        <tr>
+          <td>${c.id}</td>
+          <td>${c.bank}</td>
+          <td>${fmtMoney(totalCharges)}</td>
+          <td>${fmtMoney(c.balance)}</td>
+          <td>${fmtMoney(balanceAfter)}</td>
+          <td>${(utilAfter*100).toFixed(1)}%</td>
+          <td class="small">${cb.map(b => b.name).join(", ") || "None"}</td>
+          <td><strong>${fmtMoney(payAmount)}</strong></td>
+          <td>${fmtMoney(targetBalance)}</td>
+          <td>${(targetUtil*100).toFixed(1)}%</td>
+        </tr>
+      `;
+    });
+
+    div.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>Card</th>
+            <th>Bank</th>
+            <th>Bills This Month</th>
+            <th>Current Bal</th>
+            <th>Bal After Charges</th>
+            <th>Util After</th>
+            <th>Bills (Names)</th>
+            <th>PAY THIS</th>
+            <th>Target Balance</th>
+            <th>Target Util</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="summary-box mt-8">
+        Total “PAY THIS” across all cards this month: <strong>${fmtMoney(grandTotal)}</strong>
+      </div>
+    `;
+  }
+
+  function renderAll() {
+    renderCards();
+    renderBills();
+    renderUtilization();
+    renderPlan();
+    renderSummary();
+  }
+
+  renderAll();
+</script>
+</body>
+</html>
